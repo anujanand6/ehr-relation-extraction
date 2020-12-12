@@ -2,7 +2,9 @@
 __pycache__/
 *.py[cod]
 *$py.class
-/models/__pycache__/
+/rule_based_ner/__pycache__/
+/biobert_re/__pycache/
+/biobert_ner/__pycache__/
 
 # Flask stuff:
 instance/
@@ -16,16 +18,21 @@ instance/
 .spyproject
 
 # Data files
-training_20180910.zip
 data/
+sample_ehr/
 processed_data/
 reports/
 biobert_ner/dataset*/
 biobert_ner/output*/
 bilstm-crf_ner/results/
+dataset/
+biobert_re/dataset/
+biobert_re/output/
+biobert_re/runs/
 ade_corpus/
 test_data/
 runs/
+results/
 
 # IntelliJ files
 /annotating-ehr.iml
@@ -35,3 +42,6 @@ runs/
 Scratch.ipynb
 Scrap.ipynb
 Untitled*.ipynb
+
+# Deployment files
+/.gcloudignore

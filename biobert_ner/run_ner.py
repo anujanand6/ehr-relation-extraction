@@ -1,26 +1,6 @@
-# coding=utf-8
-# Copyright 2018 The Google AI Language Team Authors and The HuggingFace Inc. team.
-# Copyright (c) 2018, NVIDIA CORPORATION.  All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-""" Fine-tuning the library models for named entity recognition on CoNLL-2003. """
-
-
 import logging
 import os
 import sys
-import pdb
-import subprocess
 
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
@@ -32,13 +12,12 @@ from torch import nn
 from transformers import (
     AutoConfig,
     AutoModelForTokenClassification,
-    AutoModel,
     AutoTokenizer,
     EvalPrediction,
     HfArgumentParser,
     Trainer,
     TrainingArguments,
-    set_seed,
+    set_seed
 )
 from utils_ner import NerDataset, Split, get_labels
 
@@ -50,7 +29,6 @@ class ModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
-
     model_name_or_path: str = field(
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
@@ -73,7 +51,6 @@ class DataTrainingArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
-
     data_dir: str = field(
         metadata={"help": "The input data dir. Should contain the .txt files for a CoNLL-2003-formatted task."}
     )
@@ -94,10 +71,6 @@ class DataTrainingArguments:
 
 
 def main():
-    # See all possible arguments in src/transformers/training_args.py
-    # or by passing the --help flag to this script.
-    # We now keep distinct sets of args, for a cleaner separation of concerns.
-
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
@@ -164,17 +137,6 @@ def main():
         config=config,
         cache_dir=model_args.cache_dir,
     )
-    '''
-    model_to_save = AutoModel.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-    )
-    model_to_save.save_pretrained(training_args.output_dir)
-    tokenizer.save_pretrained(training_args.output_dir)
-    import pdb; pdb.set_trace()
-    '''
 
     # Get datasets
     train_dataset = (
@@ -204,20 +166,20 @@ def main():
         else None
     )
 
-    def align_predictions(predictions: np.ndarray, label_ids: np.ndarray) -> Tuple[List[int], List[int]]:
+    def align_predictions(predictions: np.ndarray, label_ids: np.ndarray) \
+            -> Tuple[List[List[str]], List[List[str]]]:
         preds = np.argmax(predictions, axis=2)
 
         batch_size, seq_len = preds.shape
 
         out_label_list = [[] for _ in range(batch_size)]
         preds_list = [[] for _ in range(batch_size)]
-        
+
         for i in range(batch_size):
             for j in range(seq_len):
                 if label_ids[i, j] != nn.CrossEntropyLoss().ignore_index:
                     out_label_list[i].append(label_map[label_ids[i][j]])
                     preds_list[i].append(label_map[preds[i][j]])
-                    
         return preds_list, out_label_list
 
     def compute_metrics(p: EvalPrediction) -> Dict:
@@ -244,8 +206,6 @@ def main():
             model_path=model_args.model_name_or_path if os.path.isdir(model_args.model_name_or_path) else None
         )
         trainer.save_model()
-        # For convenience, we also re-save the tokenizer to the same directory,
-        # so that you can share your model easily on huggingface.co/models =)
         if trainer.is_world_master():
             tokenizer.save_pretrained(training_args.output_dir)
 
@@ -265,8 +225,7 @@ def main():
                     writer.write("%s = %s\n" % (key, value))
 
             results.update(result)
-    
-    
+
     # Predict
     if training_args.do_predict:
         test_dataset = NerDataset(
@@ -293,31 +252,32 @@ def main():
                     logger.info("  %s = %s", key, value)
                     writer.write("%s = %s\n" % (key, value))
 
-        
         output_test_predictions_file = os.path.join(training_args.output_dir, "test_predictions.txt")
+        prev_pred = ""
         if trainer.is_world_master():
             with open(output_test_predictions_file, "w") as writer:
                 with open(os.path.join(data_args.data_dir, "test.txt"), "r") as f:
                     example_id = 0
                     for line in f:
-                        if line.startswith("-DOCSTART-") or line == "" or line == "\n":
+                        if line.startswith("##"):
+                            if prev_pred != "O":
+                                prev_pred = "I-" + prev_pred.split('-')[-1]
+                            output_line = line.split()[0] + " " + prev_pred + "\n"
+                            writer.write(output_line)
+                        elif line.startswith("-DOCSTART-") or line == "" or line == "\n":
                             writer.write(line)
                             if not preds_list[example_id]:
                                 example_id += 1
                         elif preds_list[example_id]:
-                            output_line = line.split()[0] + " " + preds_list[example_id].pop(0) + "\n"
+                            prev_pred = preds_list[example_id].pop(0)
+                            output_line = line.split()[0] + " " + prev_pred + "\n"
                             writer.write(output_line)
                         else:
                             logger.warning(
-                                "Maximum sequence length exceeded: Example %d", example_id
+                                "Example %d, Example: %s" % (example_id, line)
                             )
             
     return results
-
-
-def _mp_fn(index):
-    # For xla_spawn (TPUs)
-    main()
 
 
 if __name__ == "__main__":
